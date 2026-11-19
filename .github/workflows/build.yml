@@ -33,7 +33,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
       - run: npm install
       - name: Create Android project with MP icon & splash
         run: npm run android:init

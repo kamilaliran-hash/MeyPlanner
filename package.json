@@ -35,15 +35,18 @@
     "directories": { "buildResources": "build", "output": "dist" },
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }],
-      "icon": "build/icon.png",
-      "artifactName": "MeyPlanner-${version}-${target}.${ext}"
+      "icon": "build/icon.png"
+    },
+    "portable": {
+      "artifactName": "MeyPlanner-${version}-Portable.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "MeyPlanner"
+      "shortcutName": "MeyPlanner",
+      "artifactName": "MeyPlanner-${version}-Setup.${ext}"
     }
   }
 }
