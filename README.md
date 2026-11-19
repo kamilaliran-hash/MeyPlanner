@@ -93,16 +93,15 @@ build/icon.png       ← Windows icon
 .github/workflows/   ← cloud build for .exe and .apk
 ```
 
-### Built-in destinations (72)
-- **Malaysia:** Kuala Lumpur, Penang, Langkawi, Malacca, Kota Kinabalu, Kuching, Cameron Highlands, Ipoh
-- **Asia:** Singapore, Bangkok, Chiang Mai, Phuket, Bali, Jakarta, Yogyakarta, Hanoi, Ho Chi Minh City, Da Nang & Hoi An, Siem Reap, Manila, Tokyo, Kyoto, Osaka, Seoul, Busan, Jeju Island, Hong Kong, Taipei, Shanghai, Beijing, Delhi & Agra
-- **Middle East:** Makkah, Madinah, Dubai, Abu Dhabi, Doha, Istanbul
-- **Europe:** London, Edinburgh, Paris, Rome, Venice, Florence, Barcelona, Madrid, Lisbon, Amsterdam, Prague, Vienna, Berlin, Budapest, Athens, Santorini, Interlaken (Swiss Alps)
-- **Americas:** New York, Los Angeles, San Francisco, Las Vegas, Toronto, Vancouver, Mexico City, Cancún, Rio de Janeiro, Buenos Aires, Cusco & Machu Picchu
-- **Oceania:** Sydney, Melbourne, Auckland, Queenstown
-- **Africa:** Cairo, Marrakech, Cape Town
+### Built-in destinations (211, ~1,550 places)
+- **Malaysia (8):** Kuala Lumpur, Penang, Langkawi, Malacca, Kota Kinabalu, Kuching, Cameron Highlands, Ipoh
+- **Japan (19):** Tokyo, Kyoto, Osaka, Nara, Sapporo, Otaru, Furano & Biei, Niseko, Hakodate, Hiroshima & Miyajima, Mt Fuji & Hakone, Nikko, Kamakura & Yokohama, Kanazawa, Takayama & Shirakawa-go, Nagoya, Kobe & Himeji, Fukuoka, Okinawa
+- **Rest of Asia (46):** Singapore, Maldives, Bangkok, Chiang Mai, Phuket, Krabi, Koh Samui, Pattaya, Bali, Lombok & Gili, Labuan Bajo & Komodo, Jakarta, Bandung, Yogyakarta, Hanoi, Ho Chi Minh City, Da Nang & Hoi An, Siem Reap, Phnom Penh, Luang Prabang, Manila, Cebu, Boracay, Palawan, Seoul, Busan, Jeju, Gyeongju, Hong Kong, Macau, Taipei, Shanghai, Beijing, Xi'an, Chengdu, Guilin, Zhangjiajie, Delhi & Agra, Jaipur, Mumbai, Goa, Kashmir, Kathmandu, Sri Lanka, Almaty, Uzbekistan
+- **Europe (82):** Germany (9), Austria (4), England (10), Scotland (4), Ireland, France (9), Italy (9), Spain (6), Portugal (3), Netherlands, Belgium (2), Switzerland (5), Iceland, Norway (3), Sweden, Denmark, Finland (2), Poland (2), Czechia, Hungary, Croatia (2), Slovenia, Bosnia, Malta, Greece (3)
+- **Middle East (15):** Makkah, Madinah, Jeddah, Riyadh, AlUla, Dubai, Abu Dhabi, Doha, Muscat, Istanbul, Cappadocia, Antalya, Jordan, Baku, Tbilisi
+- **Americas (20), Oceania (11), Africa (10):** USA, Canada, Mexico, Cuba, Colombia, Brazil, Argentina, Peru · Australia, New Zealand, Fiji, Bora Bora · Egypt, Morocco, South Africa, Kenya, Zanzibar, Victoria Falls, Mauritius, Seychelles
 
-To add more, append to `www/data-world.js` using `add(name, region, country, currency, [lat, lng], [[place, category, lat, lng, hours], …])`. A guide for it appears in Explore automatically.
+To add more, append to `www/data-world2.js` using `add(name, region, country, currency, [lat, lng], [[place, category, lat, lng, hours], …])`. A guide for it appears in Explore automatically.
 
 ## Credits
 

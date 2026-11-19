@@ -160,3 +160,14 @@ textarea.input { min-height: 90px; resize: vertical; }
   .trip { display: block; } .side-body { overflow: visible; }
 }
 .hero .btn:not(.accent) { color: #0F172A; background: #fff; }
+
+/* Destination picker */
+.dp { position: relative; }
+.dp-list { border: 1px solid var(--line); border-radius: 12px; margin-top: 6px; max-height: 280px; overflow-y: auto; background: var(--panel);
+  box-shadow: var(--shadow); overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.dp-item { display: flex; justify-content: space-between; gap: 10px; padding: 9px 12px; cursor: pointer; }
+.dp-item:hover, .dp-item.on { background: var(--soft); }
+.dp-online { border-top: 1px dashed var(--line); color: var(--brand); font-weight: 600; }
+.dp-head { position: sticky; top: 0; background: var(--bg); color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; padding: 6px 12px; border-bottom: 1px solid var(--line); }
+.dp-count { padding: 8px 12px; font-size: 12px; color: var(--muted); }
+.dp-list::-webkit-scrollbar { width: 10px; } .dp-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; border: 2px solid var(--panel); }

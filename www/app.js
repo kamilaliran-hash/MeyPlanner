@@ -231,6 +231,53 @@ async function fetchDestination(query) {
   return Object.assign(entry, { _name: name });
 }
 
+// ---------- Destination picker (custom, scrollable – native <datalist> can't scroll in Electron) ----------
+function destPickerHTML(id, value, placeholder) {
+  return `<div class="dp"><input class="input" id="${id}" value="${esc(value || '')}" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false"><div class="dp-list" hidden></div></div>`;
+}
+function destMatches(q) {
+  q = q.trim().toLowerCase();
+  const names = destNames();
+  if (!q) return names;
+  const hay = n => { const d = MP_DESTINATIONS[n]; return [n, d.country || '', (d.tags || []).join(' ')].join(' ').toLowerCase(); };
+  return names.filter(n => hay(n).includes(q))
+    .sort((a, b) => (b.toLowerCase().startsWith(q) - a.toLowerCase().startsWith(q)) || ((MP_DESTINATIONS[b].country || '').toLowerCase().startsWith(q) - (MP_DESTINATIONS[a].country || '').toLowerCase().startsWith(q)) || a.localeCompare(b));
+}
+function attachDestPicker(root, id, onChange, allowOnline) {
+  const inp = root.querySelector('#' + id), list = inp.nextElementSibling; let active = -1;
+  const row = n => { const d = MP_DESTINATIONS[n]; return `<div class="dp-item" data-v="${esc(n)}"><span>${esc(n)}</span><span class="muted small">${esc(d.country || '')}</span></div>`; };
+  const draw = () => {
+    const raw = inp.value.trim(), names = destMatches(raw); let html = '';
+    if (!raw) {
+      html = `<div class="dp-count">${names.length} destinations · type to search city, country or theme</div>`;
+      [...REGIONS, undefined].forEach(r => {
+        const g = names.filter(n => (MP_DESTINATIONS[n].region || undefined) === r); if (!g.length) return;
+        html += `<div class="dp-head">${r === 'Online' ? 'Saved from live search' : (r || 'Other')}</div>` + g.map(row).join('');
+      });
+    } else {
+      html = names.map(row).join('');
+      if (!libFor(raw)) html += `<div class="dp-item dp-online" data-v="${esc(raw)}"><span>🌍 Use “${esc(raw)}”</span><span class="muted small">${allowOnline ? 'find top places online' : 'custom destination'}</span></div>`;
+    }
+    list.innerHTML = html; list.hidden = false; active = -1;
+  };
+  const pick = (v) => { inp.value = v; list.hidden = true; onChange && onChange(); };
+  inp.addEventListener('focus', draw);
+  inp.addEventListener('click', () => { if (list.hidden) draw(); });
+  inp.addEventListener('input', () => { draw(); onChange && onChange(); });
+  inp.addEventListener('blur', () => setTimeout(() => { list.hidden = true; }, 180));
+  list.addEventListener('mousedown', (e) => e.preventDefault());
+  list.addEventListener('click', (e) => { const it = e.target.closest('.dp-item'); if (it) { pick(it.dataset.v); inp.blur(); } });
+  inp.addEventListener('keydown', (e) => {
+    const items = [...list.querySelectorAll('.dp-item')];
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault(); if (list.hidden) draw();
+      active = Math.max(0, Math.min(items.length - 1, active + (e.key === 'ArrowDown' ? 1 : -1)));
+      items.forEach((x, i) => x.classList.toggle('on', i === active)); items[active]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter' && !list.hidden && items[active]) { e.preventDefault(); pick(items[active].dataset.v); }
+    else if (e.key === 'Escape' && !list.hidden) { e.stopPropagation(); list.hidden = true; }
+  });
+}
+
 // ---------- Rendering ----------
 function render() {
   document.documentElement.dataset.theme = S.settings.theme;
@@ -299,12 +346,15 @@ function exploreView() {
   const reg = S.view.exploreRegion || 'All';
   const list = MP_GUIDES.filter(g => {
     const d = MP_DESTINATIONS[g.dest] || {}; if (reg !== 'All' && d.region !== reg) return false;
+    if (S.view.exploreCountry && d.country !== S.view.exploreCountry) return false;
     return !q || [g.title, g.dest, g.tags.join(' '), d.country || '', (d.tags || []).join(' '), g.days.flat().join(' ')].join(' ').toLowerCase().includes(q);
   }).sort((a, b) => (b.author !== 'MeyPlanner Picks') - (a.author !== 'MeyPlanner Picks') || b.likes - a.likes);
   const regions = ['All', ...REGIONS.filter(r => Object.values(MP_DESTINATIONS).some(d => d.region === r))];
   return `<div class="section-title" style="margin-top:0"><h2>Explore ${Object.keys(MP_DESTINATIONS).length} destinations worldwide</h2></div>
     <input class="input" placeholder="Search city, country or theme – e.g. Japan, Umrah, beach, food…" value="${esc(S.view.exploreQ || '')}" data-input="exploreQ" style="max-width:460px;margin-bottom:12px">
-    <div class="row wrap" style="gap:6px;margin-bottom:16px">${regions.map(r => `<span class="chip click ${reg === r ? '' : 'off'}" data-act="region" data-k="${r}">${r}</span>`).join('')}</div>
+    <div class="row wrap" style="gap:6px;margin-bottom:${reg === 'All' ? 16 : 8}px">${regions.map(r => `<span class="chip click ${reg === r ? '' : 'off'}" data-act="region" data-k="${r}">${r}</span>`).join('')}</div>
+    ${reg === 'All' ? '' : (() => { const cs = {}; Object.values(MP_DESTINATIONS).filter(d => d.region === reg).forEach(d => cs[d.country] = (cs[d.country] || 0) + 1);
+      return `<div class="row wrap" style="gap:6px;margin-bottom:16px"><span class="muted small">Country:</span>${Object.entries(cs).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([c, n]) => `<span class="chip click ${S.view.exploreCountry === c ? '' : 'off'}" data-act="country" data-k="${esc(c)}">${esc(c)} <b>${n}</b></span>`).join('')}</div>`; })()}
     <div class="grid">${list.map(guideCard).join('') || `<div class="empty">No guides match.${q ? ` <br><br><button class="btn accent" data-act="draft-online" data-k="${esc(S.view.exploreQ)}">⚡ Build a ${esc(S.view.exploreQ)} itinerary from live map data</button>` : ''}</div>`}</div>
     <div class="box" style="margin-top:20px"><b>Going somewhere not listed?</b> <span class="muted">Quick draft works for any city in the world – MeyPlanner pulls its best-known attractions from OpenStreetMap.</span>
       <div style="margin-top:10px"><button class="btn accent sm" data-act="quick-draft">⚡ Quick draft any destination</button></div></div>
@@ -612,7 +662,7 @@ const val = (root, sel) => root.querySelector(sel)?.value?.trim() ?? '';
 
 function tripForm(t = {}) {
   return `<div class="field"><label>Trip name</label><input class="input" id="f-name" value="${esc(t.name || '')}" placeholder="e.g. Penang makan trip"></div>
-    <div class="field"><label>Destination</label><input class="input" id="f-dest" list="dest-list" value="${esc(t.dest || '')}" placeholder="City or country"><datalist id="dest-list">${destNames().map(d => `<option>${esc(d)}</option>`).join('')}</datalist></div>
+    <div class="field"><label>Destination</label>${destPickerHTML('f-dest', t.dest, 'Search city or country…')}</div>
     <div class="row wrap"><div class="field"><label>Start date</label><input type="date" class="input" id="f-start" value="${t.start || addDays(todayISO(), 30)}"></div>
     <div class="field"><label>End date</label><input type="date" class="input" id="f-end" value="${t.end || addDays(todayISO(), 33)}"></div></div>
     <div class="field"><label>Currency</label><select class="input" id="f-cur">${CURRENCIES.map(c => `<option ${c === (t.currency || S.settings.currency) ? 'selected' : ''}>${c}</option>`).join('')}</select></div>`;
@@ -624,20 +674,19 @@ function openNewTrip() {
     t.currency = val(r, '#f-cur'); if (lib) t.currency = val(r, '#f-cur');
     save(t); openTrip(t.id);
     if (!lib && dest) geocode(dest).then(res => { if (res[0]) { t.center = [+res[0].lat, +res[0].lon]; save(t); MapView.draw(t); } }).catch(() => {});
-  } }]);
+  } }], (r) => attachDestPicker(r, 'f-dest'));
 }
 function openEditTrip(t) {
   modal('Edit trip', tripForm(t), [{ label: 'Cancel' }, { label: 'Save', cls: 'primary', onClick: (r) => {
     t.name = val(r, '#f-name') || t.name; t.dest = val(r, '#f-dest'); t.start = val(r, '#f-start'); t.end = val(r, '#f-end'); t.currency = val(r, '#f-cur');
     const lb = libFor(t.dest); if (lb) { t.dest = lb._name; t.center = lb.center; }
     syncDays(t); save(t); render();
-  } }]);
+  } }], (r) => attachDestPicker(r, 'f-dest'));
 }
 function openQuickDraft(preset) {
   const cats = ['sights', 'food', 'nature', 'culture', 'shopping', 'fun'];
   modal('⚡ Quick draft itinerary', `<p class="muted small" style="margin-top:0">Type any city or region in the world. ${Object.keys(MP_DESTINATIONS).length} popular destinations are built in; anywhere else, MeyPlanner pulls the best-known attractions from live map data. You get a day-by-day plan grouped by area, with times and routes.</p>
-    <div class="field"><label>Destination</label><input class="input" id="q-dest" list="q-dest-list" value="${esc(preset || '')}" placeholder="e.g. Tokyo, Istanbul, Hokkaido, Krabi, Reykjavik…" autocomplete="off">
-      <datalist id="q-dest-list">${destNames().map(d => `<option value="${esc(d)}">${esc(MP_DESTINATIONS[d].country || '')}</option>`).join('')}</datalist>
+    <div class="field"><label>Destination</label>${destPickerHTML('q-dest', preset, 'e.g. Tokyo, Sapporo, Maldives, Munich, Scotland…')}
       <div class="small muted" id="q-hint" style="margin-top:4px"></div></div>
     <div class="row wrap"><div class="field"><label>Start date</label><input type="date" class="input" id="q-start" value="${addDays(todayISO(), 30)}"></div>
     <div class="field"><label>Days</label><input type="number" min="1" max="14" class="input" id="q-days" value="3"></div>
@@ -659,7 +708,7 @@ function openQuickDraft(preset) {
     r.querySelector('#q-int').onclick = (e) => { const c = e.target.closest('.chip'); if (c) c.classList.toggle('off'); };
     const inp = r.querySelector('#q-dest'), hint = r.querySelector('#q-hint');
     const upd = () => { const l = libFor(inp.value); hint.textContent = !inp.value.trim() ? '' : l ? `✓ ${l._name}${l.country ? ', ' + l.country : ''} – ${l.places.length} curated places${l.online ? ' (saved from live data)' : ''}` : '🌍 Not in the built-in list – top attractions will be fetched online'; };
-    inp.addEventListener('input', upd); upd();
+    attachDestPicker(r, 'q-dest', upd, true); upd();
   });
 }
 function openGuide(g) {
@@ -855,7 +904,8 @@ document.addEventListener('click', async (e) => {
     case 'new-trip': openNewTrip(); break;
     case 'quick-draft': openQuickDraft(); break;
     case 'draft-online': openQuickDraft(el.dataset.k); break;
-    case 'region': S.view.exploreRegion = el.dataset.k; render(); break;
+    case 'region': S.view.exploreRegion = el.dataset.k; S.view.exploreCountry = null; render(); break;
+    case 'country': S.view.exploreCountry = S.view.exploreCountry === el.dataset.k ? null : el.dataset.k; render(); break;
     case 'fetch-places': {
       el.disabled = true; el.textContent = 'Searching live map data…';
       fetchDestination(t.dest).then(lib => { if (!t.center) t.center = lib.center; t.dest = lib._name; save(t); render(); toast(`Found ${lib.places.length} popular places`); })
