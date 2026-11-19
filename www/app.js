@@ -179,6 +179,58 @@ async function geocode(q, near) {
   if (!r.ok) throw new Error('Search failed'); return r.json();
 }
 
+// ---------- Worldwide destinations (built-in library + live OpenStreetMap lookup) ----------
+const PLACES_KEY = 'meyplanner.places.v1';
+try { Object.assign(MP_DESTINATIONS, JSON.parse(localStorage.getItem(PLACES_KEY) || '{}')); } catch {}
+const destNames = () => Object.keys(MP_DESTINATIONS).sort((a, b) => a.localeCompare(b));
+function libFor(name) {
+  if (!name) return null; const n = name.trim().toLowerCase();
+  const k = Object.keys(MP_DESTINATIONS).find(x => x.toLowerCase() === n) || Object.keys(MP_DESTINATIONS).find(x => x.toLowerCase().split(/ & | \(|, /)[0] === n.split(',')[0]);
+  return k ? Object.assign(MP_DESTINATIONS[k], { _name: k }) : null;
+}
+const REGIONS = ['Malaysia', 'Asia', 'Middle East', 'Europe', 'Americas', 'Oceania', 'Africa', 'Online'];
+function osmCat(t) {
+  if (t.amenity === 'marketplace' || t.amenity === 'food_court') return 'food';
+  if (t.tourism === 'theme_park' || t.tourism === 'zoo' || t.tourism === 'aquarium') return 'fun';
+  if (t.tourism === 'museum' || t.tourism === 'gallery' || t.historic || t.amenity === 'place_of_worship') return 'culture';
+  if (t.leisure || t.natural || t.tourism === 'viewpoint') return 'nature';
+  if (t.shop) return 'shopping';
+  return 'sights';
+}
+const CAT_HOURS = { culture: 1.5, nature: 1.5, sights: 1, food: 1, fun: 3, shopping: 1.5 };
+async function fetchDestination(query) {
+  const geo = await geocode(query); if (!geo.length) throw new Error(`Couldn't find “${query}”`);
+  const g = geo[0], lat = +g.lat, lng = +g.lon, bb = (g.boundingbox || []).map(Number);
+  const diag = bb.length === 4 ? hav([bb[0], bb[2]], [bb[1], bb[3]]) : 10;
+  const R = Math.round(Math.max(3, Math.min(20, diag / 2)) * 1000);
+  const A = `(around:${R},${lat},${lng})`;
+  const q = `[out:json][timeout:25];(
+    nwr${A}["tourism"~"^(attraction|museum|viewpoint|theme_park|zoo|gallery|aquarium)$"]["name"];
+    nwr${A}["historic"~"^(castle|monument|palace|fort|ruins|archaeological_site|memorial|city_gate)$"]["name"]["wikidata"];
+    nwr${A}["amenity"="marketplace"]["name"];
+    nwr${A}["amenity"="place_of_worship"]["name"]["wikipedia"];
+    nwr${A}["leisure"~"^(park|garden|nature_reserve)$"]["name"]["wikidata"];
+    nwr${A}["natural"~"^(beach|peak|waterfall)$"]["name"]["wikidata"];
+  );out center tags 400;`;
+  const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+  if (!r.ok) throw new Error('Place service is busy – try again in a minute');
+  const data = await r.json(); const seen = new Set();
+  const scored = data.elements.map(e => {
+    const t = e.tags || {}, name = t['name:en'] || t.name, la = e.lat ?? e.center?.lat, ln = e.lon ?? e.center?.lon;
+    const langs = Object.keys(t).filter(k => k.startsWith('name:')).length;
+    const score = (t.wikipedia ? 6 : 0) + (t.wikidata ? 3 : 0) + Math.min(langs, 30) / 3 + (t.tourism === 'attraction' ? 1 : 0) + (t.heritage ? 2 : 0) + (t.tourism === 'museum' ? 1 : 0);
+    return { name, la, ln, score, cat: osmCat(t) };
+  }).filter(p => p.name && p.la != null && !/^\d+$/.test(p.name)).sort((a, b) => b.score - a.score)
+    .filter(p => { const k = p.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 30);
+  if (scored.length < 3) throw new Error(`Not enough well-known places found near “${query}”. Try a bigger city nearby.`);
+  const name = g.name || query.split(',')[0].trim(); const country = (g.display_name || '').split(',').pop().trim();
+  const entry = { region: 'Online', country, currency: S.settings.currency, center: [lat, lng], online: true,
+    places: scored.map(p => [p.name, p.cat, +p.la.toFixed(5), +p.ln.toFixed(5), CAT_HOURS[p.cat] || 1.5]) };
+  MP_DESTINATIONS[name] = entry;
+  try { const c = JSON.parse(localStorage.getItem(PLACES_KEY) || '{}'); c[name] = entry; localStorage.setItem(PLACES_KEY, JSON.stringify(c)); } catch {}
+  return Object.assign(entry, { _name: name });
+}
+
 // ---------- Rendering ----------
 function render() {
   document.documentElement.dataset.theme = S.settings.theme;
@@ -244,11 +296,19 @@ function guideCard(g, i) {
 }
 function exploreView() {
   const q = (S.view.exploreQ || '').toLowerCase();
-  const list = MP_GUIDES.filter(g => !q || (g.title + g.dest + g.tags.join(' ')).toLowerCase().includes(q));
-  return `<div class="section-title" style="margin-top:0"><h2>Explore guides & itineraries</h2></div>
-    <input class="input" placeholder="Search destinations, e.g. Penang, food, road trip…" value="${esc(S.view.exploreQ || '')}" data-input="exploreQ" style="max-width:460px;margin-bottom:16px">
-    <div class="grid">${list.map(guideCard).join('') || '<div class="empty">No guides match.</div>'}</div>
-    <p class="muted small" style="margin-top:20px">Guides are bundled samples. Copy any guide into your trips, then edit it freely.</p>`;
+  const reg = S.view.exploreRegion || 'All';
+  const list = MP_GUIDES.filter(g => {
+    const d = MP_DESTINATIONS[g.dest] || {}; if (reg !== 'All' && d.region !== reg) return false;
+    return !q || [g.title, g.dest, g.tags.join(' '), d.country || '', (d.tags || []).join(' '), g.days.flat().join(' ')].join(' ').toLowerCase().includes(q);
+  }).sort((a, b) => (b.author !== 'MeyPlanner Picks') - (a.author !== 'MeyPlanner Picks') || b.likes - a.likes);
+  const regions = ['All', ...REGIONS.filter(r => Object.values(MP_DESTINATIONS).some(d => d.region === r))];
+  return `<div class="section-title" style="margin-top:0"><h2>Explore ${Object.keys(MP_DESTINATIONS).length} destinations worldwide</h2></div>
+    <input class="input" placeholder="Search city, country or theme – e.g. Japan, Umrah, beach, food…" value="${esc(S.view.exploreQ || '')}" data-input="exploreQ" style="max-width:460px;margin-bottom:12px">
+    <div class="row wrap" style="gap:6px;margin-bottom:16px">${regions.map(r => `<span class="chip click ${reg === r ? '' : 'off'}" data-act="region" data-k="${r}">${r}</span>`).join('')}</div>
+    <div class="grid">${list.map(guideCard).join('') || `<div class="empty">No guides match.${q ? ` <br><br><button class="btn accent" data-act="draft-online" data-k="${esc(S.view.exploreQ)}">⚡ Build a ${esc(S.view.exploreQ)} itinerary from live map data</button>` : ''}</div>`}</div>
+    <div class="box" style="margin-top:20px"><b>Going somewhere not listed?</b> <span class="muted">Quick draft works for any city in the world – MeyPlanner pulls its best-known attractions from OpenStreetMap.</span>
+      <div style="margin-top:10px"><button class="btn accent sm" data-act="quick-draft">⚡ Quick draft any destination</button></div></div>
+    <p class="muted small" style="margin-top:12px">Guides are bundled samples. Copy any guide into your trips, then edit it freely.</p>`;
 }
 function settingsView() {
   const st = S.settings;
@@ -266,7 +326,13 @@ function settingsView() {
   <div class="box"><h3>Backup</h3><div class="row wrap">
     <button class="btn" data-act="backup">⬇ Export all data</button><button class="btn" data-act="restore">⬆ Restore backup</button>
     <button class="btn danger" data-act="wipe">Delete all data</button></div></div>
-  <p class="muted small">MeyPlanner 1.0 · Maps © OpenStreetMap contributors, CARTO · Search by Nominatim</p>`;
+  <div class="box"><h3>About MeyPlanner</h3>
+    <div class="row" style="gap:14px;align-items:center">
+      <img src="icons/icon-128.png" alt="MP" style="width:64px;height:64px;border-radius:16px">
+      <div><div style="font-weight:800;font-size:16px">MeyPlanner</div><div class="muted small">Version 1.0.0</div>
+        <div class="small" style="margin-top:4px">Owner & developer: <b>Kamil</b></div>
+        <div class="muted small">© ${new Date().getFullYear()} Kamil. All rights reserved.</div></div></div>
+    <p class="muted small" style="margin-bottom:0">All-in-one itinerary & visual trip planner.<br>Maps © OpenStreetMap contributors, CARTO · Search by Nominatim · Attractions via Overpass API</p></div>`;
 }
 
 // ----- Trip screen -----
@@ -337,14 +403,16 @@ function planTab(t) {
     <p class="muted small">Tip: drag the ⋮⋮ handle to reorder stops or move them between days.</p>`;
 }
 function placesTab(t) {
-  const lib = MP_DESTINATIONS[t.dest];
+  const lib = libFor(t.dest);
   const existing = new Set([...t.ideas, ...t.days.flatMap(d => d.items)].map(i => i.name));
   return `<div class="box"><h3>⭐ Your saved places</h3>
       <div class="droplist" data-list="ideas">${t.ideas.map(it => itemRow(it, 0, null)).join('') || '<div class="muted small">Nothing saved yet. Search the map or pick from suggestions below.</div>'}</div>
       <div class="row wrap" style="margin-top:8px"><button class="btn sm" data-act="add-item" data-id="ideas">＋ Add manually</button><button class="btn sm" data-act="search-for" data-id="ideas">🔍 Search map</button></div></div>
-    ${lib ? `<div class="box"><h3>Popular in ${esc(t.dest)}</h3>${lib.places.map(p => `<div class="list-item"><span>${TYPES[CAT_TYPE[p[1]]]}</span><div><div style="font-weight:600">${esc(p[0])}</div><div class="muted small">${p[1]} · ~${p[4]}h</div></div>
+    ${lib ? `<div class="box"><h3>Popular in ${esc(lib._name)}${lib.online ? ' <span class="badge">live data</span>' : ''}</h3>${lib.places.map(p => `<div class="list-item"><span>${TYPES[CAT_TYPE[p[1]]]}</span><div><div style="font-weight:600">${esc(p[0])}</div><div class="muted small">${p[1]} · ~${p[4]}h</div></div>
       <div class="right">${existing.has(p[0]) ? '<span class="chip">Added</span>' : `<button class="btn sm" data-act="add-suggestion" data-name="${esc(p[0])}">＋ Save</button>`}</div></div>`).join('')}</div>`
-      : `<div class="box muted small">Tip: set the trip destination to one of ${Object.keys(MP_DESTINATIONS).join(', ')} for curated suggestions, or use map search for anywhere in the world.</div>`}`;
+      : `<div class="box"><h3>Popular places${t.dest ? ' in ' + esc(t.dest) : ''}</h3>${t.dest
+          ? `<p class="muted small">Pull the best-known attractions for ${esc(t.dest)} from live map data.</p><button class="btn accent sm" data-act="fetch-places">✨ Find popular places</button>`
+          : '<p class="muted small">Set a destination for this trip (✏️ next to the trip name) to see suggestions.</p>'}</div>`}`;
 }
 function bookingsTab(t) {
   const icon = { flight: '✈️', hotel: '🏨', car: '🚗', train: '🚆', restaurant: '🍽️', activity: '🎟️', other: '📄' };
@@ -423,7 +491,7 @@ function nearestOrder(items) {
 const placeItem = (p, time) => ({ id: uid(), name: p[0], type: CAT_TYPE[p[1]] || 'place', lat: p[2], lng: p[3], dur: p[4], time: time || '', notes: '', cost: 0 });
 function scheduleDay(items) { let t = '09:00'; items.forEach(it => { it.time = t; t = timeAdd(t, (it.dur || 1.5) + 0.5); }); }
 function draftItinerary({ dest, start, days, pace, interests, name }) {
-  const lib = MP_DESTINATIONS[dest];
+  const lib = libFor(dest); dest = lib._name;
   const end = addDays(start, days - 1);
   const t = newTrip({ name: name || `${days} days in ${dest}`, dest, start, end, center: lib.center });
   let pool = lib.places.filter(p => !interests.length || interests.includes(p[1]));
@@ -439,7 +507,7 @@ function draftItinerary({ dest, start, days, pace, interests, name }) {
   save(t); return t;
 }
 function copyGuide(g, start) {
-  const lib = MP_DESTINATIONS[g.dest];
+  const lib = libFor(g.dest);
   const t = newTrip({ name: g.title, dest: g.dest, start, end: addDays(start, g.days.length - 1), center: lib.center });
   g.days.forEach((names, i) => {
     const items = names.map(n => lib.places.find(p => p[0] === n)).filter(Boolean).map(p => placeItem(p));
@@ -544,14 +612,14 @@ const val = (root, sel) => root.querySelector(sel)?.value?.trim() ?? '';
 
 function tripForm(t = {}) {
   return `<div class="field"><label>Trip name</label><input class="input" id="f-name" value="${esc(t.name || '')}" placeholder="e.g. Penang makan trip"></div>
-    <div class="field"><label>Destination</label><input class="input" id="f-dest" list="dest-list" value="${esc(t.dest || '')}" placeholder="City or country"><datalist id="dest-list">${Object.keys(MP_DESTINATIONS).map(d => `<option>${d}</option>`).join('')}</datalist></div>
+    <div class="field"><label>Destination</label><input class="input" id="f-dest" list="dest-list" value="${esc(t.dest || '')}" placeholder="City or country"><datalist id="dest-list">${destNames().map(d => `<option>${esc(d)}</option>`).join('')}</datalist></div>
     <div class="row wrap"><div class="field"><label>Start date</label><input type="date" class="input" id="f-start" value="${t.start || addDays(todayISO(), 30)}"></div>
     <div class="field"><label>End date</label><input type="date" class="input" id="f-end" value="${t.end || addDays(todayISO(), 33)}"></div></div>
     <div class="field"><label>Currency</label><select class="input" id="f-cur">${CURRENCIES.map(c => `<option ${c === (t.currency || S.settings.currency) ? 'selected' : ''}>${c}</option>`).join('')}</select></div>`;
 }
 function openNewTrip() {
   modal('New trip', tripForm(), [{ label: 'Cancel' }, { label: 'Create trip', cls: 'primary', onClick: (r) => {
-    const dest = val(r, '#f-dest'); const lib = MP_DESTINATIONS[dest];
+    let dest = val(r, '#f-dest'); const lib = libFor(dest); if (lib) dest = lib._name;
     const t = newTrip({ name: val(r, '#f-name') || (dest ? `Trip to ${dest}` : 'New trip'), dest, start: val(r, '#f-start'), end: val(r, '#f-end'), center: lib?.center });
     t.currency = val(r, '#f-cur'); if (lib) t.currency = val(r, '#f-cur');
     save(t); openTrip(t.id);
@@ -561,27 +629,41 @@ function openNewTrip() {
 function openEditTrip(t) {
   modal('Edit trip', tripForm(t), [{ label: 'Cancel' }, { label: 'Save', cls: 'primary', onClick: (r) => {
     t.name = val(r, '#f-name') || t.name; t.dest = val(r, '#f-dest'); t.start = val(r, '#f-start'); t.end = val(r, '#f-end'); t.currency = val(r, '#f-cur');
-    if (MP_DESTINATIONS[t.dest]) t.center = MP_DESTINATIONS[t.dest].center;
+    const lb = libFor(t.dest); if (lb) { t.dest = lb._name; t.center = lb.center; }
     syncDays(t); save(t); render();
   } }]);
 }
-function openQuickDraft() {
-  const dests = Object.keys(MP_DESTINATIONS); const cats = ['sights', 'food', 'nature', 'culture', 'shopping', 'fun'];
-  modal('⚡ Quick draft itinerary', `<p class="muted small" style="margin-top:0">Pick a destination and MeyPlanner builds a day-by-day plan grouped by area, with times and routes. Edit everything afterwards.</p>
-    <div class="field"><label>Destination</label><select class="input" id="q-dest">${dests.map(d => `<option>${d}</option>`).join('')}</select></div>
+function openQuickDraft(preset) {
+  const cats = ['sights', 'food', 'nature', 'culture', 'shopping', 'fun'];
+  modal('⚡ Quick draft itinerary', `<p class="muted small" style="margin-top:0">Type any city or region in the world. ${Object.keys(MP_DESTINATIONS).length} popular destinations are built in; anywhere else, MeyPlanner pulls the best-known attractions from live map data. You get a day-by-day plan grouped by area, with times and routes.</p>
+    <div class="field"><label>Destination</label><input class="input" id="q-dest" list="q-dest-list" value="${esc(preset || '')}" placeholder="e.g. Tokyo, Istanbul, Hokkaido, Krabi, Reykjavik…" autocomplete="off">
+      <datalist id="q-dest-list">${destNames().map(d => `<option value="${esc(d)}">${esc(MP_DESTINATIONS[d].country || '')}</option>`).join('')}</datalist>
+      <div class="small muted" id="q-hint" style="margin-top:4px"></div></div>
     <div class="row wrap"><div class="field"><label>Start date</label><input type="date" class="input" id="q-start" value="${addDays(todayISO(), 30)}"></div>
-    <div class="field"><label>Days</label><input type="number" min="1" max="10" class="input" id="q-days" value="3"></div>
+    <div class="field"><label>Days</label><input type="number" min="1" max="14" class="input" id="q-days" value="3"></div>
     <div class="field"><label>Pace</label><select class="input" id="q-pace"><option value="3">Relaxed</option><option value="4" selected>Balanced</option><option value="5">Packed</option></select></div></div>
     <div class="field"><label>Interests (optional)</label><div class="row wrap" style="gap:6px" id="q-int">${cats.map(c => `<span class="chip click off" data-c="${c}">${c}</span>`).join('')}</div></div>`,
   [{ label: 'Cancel' }, { label: 'Generate itinerary', cls: 'accent', onClick: (r) => {
+    const q = val(r, '#q-dest'); if (!q) { toast('Enter a destination'); return false; }
     const interests = [...r.querySelectorAll('#q-int .chip:not(.off)')].map(x => x.dataset.c);
-    const days = Math.max(1, Math.min(10, +val(r, '#q-days') || 3));
-    const t = draftItinerary({ dest: val(r, '#q-dest'), start: val(r, '#q-start') || todayISO(), days, pace: +val(r, '#q-pace'), interests });
-    openTrip(t.id); toast('Draft ready – drag stops around to make it yours');
-  } }], (r) => r.querySelector('#q-int').onclick = (e) => { const c = e.target.closest('.chip'); if (c) c.classList.toggle('off'); });
+    const days = Math.max(1, Math.min(14, +val(r, '#q-days') || 3));
+    const opts = { start: val(r, '#q-start') || todayISO(), days, pace: +val(r, '#q-pace'), interests };
+    const go = () => { const t = draftItinerary({ ...opts, dest: q }); $('#modal-root').innerHTML = ''; openTrip(t.id); toast('Draft ready – drag stops around to make it yours'); };
+    if (libFor(q)) { go(); return false; }
+    const btn = r.querySelector('.btn.accent'), hint = r.querySelector('#q-hint');
+    btn.disabled = true; btn.textContent = 'Finding top places…'; hint.textContent = `Searching live map data for ${q}…`;
+    fetchDestination(q).then(lib => { opts.dest = lib._name; const t = draftItinerary({ ...opts, dest: lib._name }); $('#modal-root').innerHTML = ''; openTrip(t.id); toast(`Draft ready with ${lib.places.length} places found in ${lib._name}`); })
+      .catch(err => { btn.disabled = false; btn.textContent = 'Generate itinerary'; hint.innerHTML = `<span style="color:var(--danger)">${esc(err.message === 'Failed to fetch' ? 'No internet connection – pick a built-in destination or try again online.' : err.message)}</span>`; });
+    return false;
+  } }], (r) => {
+    r.querySelector('#q-int').onclick = (e) => { const c = e.target.closest('.chip'); if (c) c.classList.toggle('off'); };
+    const inp = r.querySelector('#q-dest'), hint = r.querySelector('#q-hint');
+    const upd = () => { const l = libFor(inp.value); hint.textContent = !inp.value.trim() ? '' : l ? `✓ ${l._name}${l.country ? ', ' + l.country : ''} – ${l.places.length} curated places${l.online ? ' (saved from live data)' : ''}` : '🌍 Not in the built-in list – top attractions will be fetched online'; };
+    inp.addEventListener('input', upd); upd();
+  });
 }
 function openGuide(g) {
-  const lib = MP_DESTINATIONS[g.dest];
+  const lib = libFor(g.dest);
   modal(esc(g.title), `<div class="muted small">by ${esc(g.author)} · ♥ ${g.likes.toLocaleString()} · ${g.dest}</div>
     ${g.days.map((names, i) => `<div style="margin-top:12px"><b style="color:${DAY_COLORS[i]}">Day ${i + 1}</b>${names.map((n, j) => { const p = lib.places.find(x => x[0] === n); return `<div class="list-item"><span class="num" style="background:${DAY_COLORS[i]};width:22px;height:22px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800">${j + 1}</span><span>${esc(n)}</span><span class="muted small right">${p ? p[1] : ''}</span></div>`; }).join('')}</div>`).join('')}
     <div class="field" style="margin-top:14px"><label>Start date for your copy</label><input type="date" class="input" id="g-start" value="${addDays(todayISO(), 30)}"></div>`,
@@ -772,6 +854,13 @@ document.addEventListener('click', async (e) => {
     case 'hometab': S.view.screen = 'home'; S.view.homeTab = el.dataset.k; render(); break;
     case 'new-trip': openNewTrip(); break;
     case 'quick-draft': openQuickDraft(); break;
+    case 'draft-online': openQuickDraft(el.dataset.k); break;
+    case 'region': S.view.exploreRegion = el.dataset.k; render(); break;
+    case 'fetch-places': {
+      el.disabled = true; el.textContent = 'Searching live map data…';
+      fetchDestination(t.dest).then(lib => { if (!t.center) t.center = lib.center; t.dest = lib._name; save(t); render(); toast(`Found ${lib.places.length} popular places`); })
+        .catch(err => { toast(err.message === 'Failed to fetch' ? 'Needs an internet connection' : err.message); render(); });
+      break; }
     case 'open-trip': openTrip(id); break;
     case 'open-guide': openGuide(MP_GUIDES.find(g => g.id === id)); break;
     case 'join-trip':
@@ -799,7 +888,7 @@ document.addEventListener('click', async (e) => {
       save(t); render(); MapView.draw(t); toast('Route optimized for shortest travel'); break; }
     case 'rename-day': { const d = t.days.find(x => x.id === id); modal('Day title', `<input class="input" id="d-title" value="${esc(d.title || '')}" placeholder="e.g. Heritage walk">`, [{ label: 'Cancel' }, { label: 'Save', cls: 'primary', onClick: (r) => { d.title = val(r, '#d-title'); save(t); render(); } }]); break; }
     case 'add-day-note': modal('📝 Trip notes', `<textarea class="input" id="n-text" style="min-height:220px" placeholder="Packing list, visa reminders, emergency contacts…">${esc(t.notes)}</textarea>`, [{ label: 'Cancel' }, { label: 'Save', cls: 'primary', onClick: (r) => { t.notes = r.querySelector('#n-text').value; save(t); } }]); break;
-    case 'add-suggestion': { const p = MP_DESTINATIONS[t.dest].places.find(x => x[0] === el.dataset.name); t.ideas.push(placeItem(p)); save(t); render(); break; }
+    case 'add-suggestion': { const p = libFor(t.dest).places.find(x => x[0] === el.dataset.name); t.ideas.push(placeItem(p)); save(t); render(); break; }
     case 'import-email': openImportEmail(t); break;
     case 'add-res': openResEditor(t); break;
     case 'edit-res': openResEditor(t, id); break;

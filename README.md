@@ -1,6 +1,7 @@
 # MeyPlanner
 
 **All-in-one itinerary & visual trip planner** for Windows and Android.
+Owner & developer: **Kamil** · © 2026 Kamil. All rights reserved.
 App ID: `com.meyplanner.app` · Logo: `www/logo.svg` (MP monogram)
 
 ## Features
@@ -11,8 +12,8 @@ App ID: `com.meyplanner.app` · Logo: `www/logo.svg` (MP monogram)
 | 🗓 **Day-by-day planner** | Each day shows times, walking/driving distance & time between stops, and daily cost |
 | ✋ **Drag-and-drop** | Drag the ⋮⋮ handle to reorder stops or move them between days / "Places to visit" (mouse + touch) |
 | 🔀 **Route optimizer** | One tap reorders a day's stops for the shortest travel path |
-| ⚡ **Quick draft** | Choose destination, days, pace and interests to get a full itinerary grouped by area, with times |
-| 🧭 **Explore / inspiration** | Ready-made travelers' guides (KL, Penang, Langkawi, Singapore, Bangkok, Bali, Tokyo, Seoul, Paris) to copy & edit |
+| ⚡ **Quick draft – anywhere** | Type any city in the world, then pick days, pace and interests to get a full itinerary grouped by area, with times. 72 destinations are built in (works offline); for anywhere else, the best-known attractions are pulled live from OpenStreetMap and saved for next time |
+| 🧭 **Explore / inspiration** | 72 ready-made guides you can copy & edit, filterable by region (Malaysia, Asia, Middle East, Europe, Americas, Oceania, Africa) and searchable by city, country, theme or place (e.g. "Japan", "Umrah", "beach") |
 | 📧 **Reservation import from email** | Paste a confirmation email or load `.eml`/`.html` files; detects flights, hotels (check-in/out), trains, car rentals, restaurants and tours, including confirmation codes, and places them on the right day. Parsing runs on-device |
 | 👥 **Real-time group collaboration** | Share a 6-letter code; everyone's edits sync live (see setup below) |
 | 💰 **Expense splitting** | Add expenses, choose who paid and who shares, see balances and a minimal "who pays whom" settle-up; budget tracking by category |
@@ -92,8 +93,17 @@ build/icon.png       ← Windows icon
 .github/workflows/   ← cloud build for .exe and .apk
 ```
 
-To add a new destination for Quick draft and Explore, add it to `www/data.js` (name, category, lat, lng, hours).
+### Built-in destinations (72)
+- **Malaysia:** Kuala Lumpur, Penang, Langkawi, Malacca, Kota Kinabalu, Kuching, Cameron Highlands, Ipoh
+- **Asia:** Singapore, Bangkok, Chiang Mai, Phuket, Bali, Jakarta, Yogyakarta, Hanoi, Ho Chi Minh City, Da Nang & Hoi An, Siem Reap, Manila, Tokyo, Kyoto, Osaka, Seoul, Busan, Jeju Island, Hong Kong, Taipei, Shanghai, Beijing, Delhi & Agra
+- **Middle East:** Makkah, Madinah, Dubai, Abu Dhabi, Doha, Istanbul
+- **Europe:** London, Edinburgh, Paris, Rome, Venice, Florence, Barcelona, Madrid, Lisbon, Amsterdam, Prague, Vienna, Berlin, Budapest, Athens, Santorini, Interlaken (Swiss Alps)
+- **Americas:** New York, Los Angeles, San Francisco, Las Vegas, Toronto, Vancouver, Mexico City, Cancún, Rio de Janeiro, Buenos Aires, Cusco & Machu Picchu
+- **Oceania:** Sydney, Melbourne, Auckland, Queenstown
+- **Africa:** Cairo, Marrakech, Cape Town
+
+To add more, append to `www/data-world.js` using `add(name, region, country, currency, [lat, lng], [[place, category, lat, lng, hours], …])`. A guide for it appears in Explore automatically.
 
 ## Credits
 
-Maps © OpenStreetMap contributors © CARTO · Search: Nominatim · Map library: Leaflet.
+Maps © OpenStreetMap contributors © CARTO · Search: Nominatim · Worldwide attractions: Overpass API · Map library: Leaflet.

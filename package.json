@@ -2,7 +2,7 @@
   "name": "meyplanner",
   "version": "1.0.0",
   "description": "MeyPlanner – all-in-one itinerary & visual trip planner",
-  "author": "MeyPlanner",
+  "author": "Kamil",
   "license": "UNLICENSED",
   "private": true,
   "main": "electron/main.js",
@@ -30,7 +30,7 @@
   "build": {
     "appId": "com.meyplanner.app",
     "productName": "MeyPlanner",
-    "copyright": "© MeyPlanner",
+    "copyright": "© 2026 Kamil",
     "files": ["electron/**", "www/**", "package.json"],
     "directories": { "buildResources": "build", "output": "dist" },
     "win": {
