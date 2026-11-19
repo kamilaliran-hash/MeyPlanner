@@ -1,0 +1,49 @@
+{
+  "name": "meyplanner",
+  "version": "1.0.0",
+  "description": "MeyPlanner – all-in-one itinerary & visual trip planner",
+  "author": "MeyPlanner",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "prepare:web": "node scripts/copy-vendor.js",
+    "start": "npm run prepare:web && electron .",
+    "build:win": "npm run prepare:web && electron-builder --win --publish never",
+    "android:init": "npm run prepare:web && npx cap add android && npx capacitor-assets generate --android --iconBackgroundColor \"#0F9D8C\" --splashBackgroundColor \"#0F766E\" && npx cap sync android",
+    "android:sync": "npm run prepare:web && npx cap sync android",
+    "android:open": "npx cap open android",
+    "build:apk": "npm run android:sync && cd android && gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "leaflet": "^1.9.4"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.0.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.meyplanner.app",
+    "productName": "MeyPlanner",
+    "copyright": "© MeyPlanner",
+    "files": ["electron/**", "www/**", "package.json"],
+    "directories": { "buildResources": "build", "output": "dist" },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }],
+      "icon": "build/icon.png",
+      "artifactName": "MeyPlanner-${version}-${target}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MeyPlanner"
+    }
+  }
+}

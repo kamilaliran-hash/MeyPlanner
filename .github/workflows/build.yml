@@ -1,0 +1,49 @@
+name: Build MeyPlanner (Windows + Android)
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows installer (.exe)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run build:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MeyPlanner-Windows
+          path: dist/*.exe
+
+  android:
+    name: Android app (.apk)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - run: npm install
+      - name: Create Android project with MP icon & splash
+        run: npm run android:init
+      - name: Build APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk MeyPlanner.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MeyPlanner-Android
+          path: MeyPlanner.apk

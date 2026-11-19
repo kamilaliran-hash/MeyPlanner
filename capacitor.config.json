@@ -1,0 +1,9 @@
+{
+  "appId": "com.meyplanner.app",
+  "appName": "MeyPlanner",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#F5F7FA"
+  }
+}
